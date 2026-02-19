@@ -1,0 +1,40 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Member {
+  id             Int           @id @default(autoincrement())
+  memberEmail    String        @unique
+  memberName     String
+  memberAge      Int?
+  memberAddress  String?
+  memberProfile  String?
+  memberCreateAt DateTime      @default(now())
+  socials        AuthAccount[]
+
+  @@map("tbl_member")
+}
+
+model AuthAccount {
+  id               Int          @id @default(autoincrement())
+  memberProvider   AuthProvider
+  memberProviderId String?
+  memberPassword   String?
+  memberId         Int
+  member           Member       @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberProviderId, memberId])
+  @@map("tbl_auth_account")
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  KAKAO
+  NAVER
+}
