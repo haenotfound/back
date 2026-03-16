@@ -11,17 +11,20 @@ datasource db {
 //2. dto
 
 model Member {
-  id             Int           @id @default(autoincrement())
-  memberEmail    String        @unique
+  id             Int              @id @default(autoincrement())
+  memberEmail    String           @unique
   memberName     String
-  memberRole     MemberRole    @default(USER)
+  memberRole     MemberRole       @default(USER)
   memberNickname String?
   memberProfile  String?
   memberIntro    String?
-  memberInactive Boolean?      @default(false)
+  memberInactive Boolean?         @default(false)
   inactiveReason String?
-  memberCreateAt DateTime      @default(now())
-  socials        AuthAccount[]
+  memberCreateAt DateTime         @default(now())
+  socials         AuthAccount[]
+  memberLocations MemberLocation[]
+  safeScores      SafeScore[]
+  recentRegions   MemberRecentRegion[]
 
   @@map("member")
 }
@@ -32,6 +35,7 @@ enum MemberRole {
   ADMIN
 }
 
+// 소셜 로그인 계정
 model AuthAccount {
   id               Int          @id @default(autoincrement())
   memberProvider   AuthProvider
@@ -44,9 +48,62 @@ model AuthAccount {
   @@map("tbl_auth_account")
 }
 
+// 소셜 로그인 공급자
 enum AuthProvider {
   LOCAL
   GOOGLE
   KAKAO
   NAVER
+}
+
+// 즐겨찾기 지역 (카카오맵 연동·안전점수용)
+model MemberLocation {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  MemberLocationSi        String?  // 시
+  MemberLocationGu        String?  // 구
+  MemberLocationDong      String?  // 동
+  MemberLocationLatitude  Decimal? // 위도 (카카오맵·거리 계산용)
+  MemberLocationLongitude Decimal? // 경도
+  createdAt DateTime? @default(now())
+
+  @@map("tbl_member_location")
+}
+
+// 안전점수 (카카오맵·위치 기반 계산 결과 저장)
+model SafeScore {
+  id                  Int      @id @default(autoincrement())
+  memberId            Int
+  member              Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  address             String?  // 화면 표시용 주소 (예: 경남 창원시 진해구 명제로 478)
+  score               Int      // 총점 (0~100)
+  safetyMessage       String?  // "밤에도 비교적 안전한 지역!"
+  rankingPercentile   Int?     // 전국 상위 % (예: 18)
+  // 항목별 점수
+  cctvScore           Int?
+  policeScore         Int?
+  streetlightScore    Int?
+  crimeProneScore     Int?
+  // 설명용 개수 (이 점수는 왜 이렇게 나왔나요?)
+  cctvCount           Int?
+  policeCount         Int?
+  streetlightCount    Int?
+  crimeProneCount     Int?
+  createdAt           DateTime @default(now())
+
+  @@map("tbl_safe_score")
+}
+
+// 최근 본 지역 (탭 리스트용)
+model MemberRecentRegion {
+  id        Int      @id @default(autoincrement())
+  memberId  Int
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  address   String   // 화면 표시용 (예: 서울특별시 관악구 신림동)
+  latitude  Decimal? // 다시보기 시 지도/점수 조회용
+  longitude Decimal?
+  viewedAt  DateTime @default(now()) // 마지막 확인 시각
+
+  @@map("tbl_member_recent_region")
 }
