@@ -7,17 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Member {
-  id             Int           @id @default(autoincrement())
-  memberEmail    String        @unique
-  memberName     String
-  memberAge      Int?
-  memberAddress  String?
-  memberProfile  String?
-  memberCreateAt DateTime      @default(now())
-  socials        AuthAccount[]
+//1. 스키마 정의
+//2. dto
 
-  @@map("tbl_member")
+model Member {
+  id              Int           @id @default(autoincrement())
+  memberEmail     String        @unique
+  memberName      String
+  memberRole      MemberRole    @default(USER)
+  memberNickname  String?
+  memberProfile   String?
+  memberIntro     String?
+  memberInactive  Boolean?      @default(false)
+  inactiveReason  String?
+  memberCreateAt  DateTime      @default(now())
+  socials         AuthAccount[]
+
+  @@map("member")
+}
+
+enum MemberRole {
+  USER
+  ADMIN
 }
 
 model AuthAccount {
