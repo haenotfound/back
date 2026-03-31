@@ -1,7 +1,12 @@
-import { Injectable } from "@nestjs/common";
-import { MemberRegisterDTO, MemberUpdateDTO, OAuthLoginDTO } from "src/domain/member/dto/member.dto";
-import { MemberEntity } from "src/domain/member/entity/member.entity";
-import { PrismaService } from "src/service/prisma/prisma.service";
+import { Injectable } from '@nestjs/common';
+import { MemberRole } from '@prisma/client';
+import {
+  MemberRegisterDTO,
+  MemberUpdateDTO,
+  OAuthLoginDTO,
+} from 'src/domain/member/dto/member.dto';
+import { MemberEntity } from 'src/domain/member/entity/member.entity';
+import { PrismaService } from 'src/service/prisma/prisma.service';
 
 @Injectable()
 export class MemberRepository {
@@ -15,7 +20,13 @@ export class MemberRepository {
     const memberCreate = {
       memberEmail: member.memberEmail,
       memberName: member.memberName,
-      memberProfile: member.memberProfile,
+      memberRole: MemberRole.USER,
+      memberNickname: null,
+      memberProfile: null,
+      memberIntro: null,
+      memberInactive: false,
+      inactiveReason: null,
+      memberCreateAt: new Date(),
     };
 
     //소셜 Auth
@@ -88,11 +99,11 @@ export class MemberRepository {
   }
 
   // 회원 비밀번호 수정
-  async updatePassword(id: number, memberPassword:string):Promise<void> {
+  async updatePassword(id: number, memberPassword: string): Promise<void> {
     await this.prisma.authAccount.update({
       where: { id },
-      data:{ memberPassword }
-    })
+      data: { memberPassword },
+    });
   }
 
   // 회원 정보 수정
@@ -100,7 +111,7 @@ export class MemberRepository {
     id: number,
     member: MemberUpdateDTO,
   ): Promise<MemberEntity | null> {
-    const { memberPassword, memberAge, memberAddress, ...data } = member;
+    const { memberPassword, ...data } = member;
 
     await this.prisma.member.update({
       data,

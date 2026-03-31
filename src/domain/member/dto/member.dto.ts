@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { AuthProvider } from '@prisma/client';
+import { AuthProvider, MemberRole } from '@prisma/client';
 import {
+  IsBoolean,
+  IsDate,
   IsEnum,
   IsNotEmpty,
   IsNumber,
@@ -18,16 +20,6 @@ export class MemberRegisterDTO {
   @IsString()
   @IsNotEmpty()
   memberName: string;
-
-  @ApiProperty({ example: 20, description: '회원 나이' })
-  @IsNumber()
-  @IsOptional()
-  memberAge?: number;
-
-  @ApiProperty({ example: '경기도 구리시', description: '회원 주소' })
-  @IsString()
-  @IsOptional()
-  memberAddress?: string;
 
   @ApiProperty({
     example: 'https://myprofile.com/myprofile.jpg',
@@ -59,15 +51,18 @@ export class MemberUpdateDTO {
   @IsNotEmpty()
   memberName: string;
 
-  @ApiProperty({ example: 20, description: '회원 나이' })
-  @IsNumber()
-  @IsOptional()
-  memberAge?: number;
-
-  @ApiProperty({ example: '경기도 구리시', description: '회원 주소' })
+  @ApiProperty({ example: '하리보', description: '회원 닉네임' })
   @IsString()
   @IsOptional()
-  memberAddress?: string;
+  memberNickname?: string;
+
+  @ApiProperty({
+    example: '안녕하세요, 하리보입니다.',
+    description: '회원 한 줄 소개',
+  })
+  @IsString()
+  @IsOptional()
+  memberIntro?: string;
 
   @ApiProperty({
     example: 'https://myprofile.com/myprofile.jpg',
@@ -127,6 +122,39 @@ export class OAuthLoginDTO {
 
 // 회원 조회
 export class MemberResponseDTO {
+  // model Member
+  @ApiProperty({ example: 'USER', enum: MemberRole, description: '회원 권한' })
+  @IsEnum(MemberRole)
+  memberRole: MemberRole;
+
+  @ApiProperty({ example: '하리보', description: '회원 닉네임' })
+  @IsString()
+  @IsOptional()
+  memberNickname?: string;
+
+  @ApiProperty({
+    example: '안녕하세요, 하리보입니다.',
+    description: '회원 한 줄 소개',
+  })
+  @IsString()
+  @IsOptional()
+  memberIntro?: string;
+
+  @ApiProperty({ example: true, description: '회원 탈퇴 여부' })
+  @IsBoolean()
+  @IsOptional()
+  memberInactive?: boolean;
+
+  @ApiProperty({ example: '탈퇴 사유', description: '회원 탈퇴 사유' })
+  @IsString()
+  @IsOptional()
+  inactiveReason?: string;
+
+  @ApiProperty({ example: '2026-03-31', description: '회원 가입 일자' })
+  @IsDate()
+  @IsOptional()
+  memberCreateAt: Date;
+  // model Member
   @ApiProperty({ example: 1, description: '아이디' })
   @IsNumber()
   id: number;
@@ -140,16 +168,6 @@ export class MemberResponseDTO {
   @IsNotEmpty()
   memberName: string;
 
-  @ApiProperty({ example: 20, description: '회원 나이' })
-  @IsNumber()
-  @IsOptional()
-  memberAge?: number;
-
-  @ApiProperty({ example: '경기도 구리시', description: '회원 주소' })
-  @IsString()
-  @IsOptional()
-  memberAddress?: string;
-
   @ApiProperty({
     example: 'https://myprofile.com/myprofile.jpg',
     description: '회원 이미지',
@@ -158,7 +176,6 @@ export class MemberResponseDTO {
   @IsOptional()
   memberProfile?: string;
 }
-
 // 파일 입출력용 추가
 export type MulterFile = {
   fieldname: string;
