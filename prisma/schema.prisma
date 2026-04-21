@@ -15,7 +15,7 @@ model Member {
   memberEmail                String                      @unique
   memberName                 String
   memberRole                 MemberRole                  @default(USER)
-  memberNickname             String?
+  memberNickname             String?                     @unique
   memberProfile              String?
   memberIntro                String?
   memberInactive             Boolean?                    @default(false)
