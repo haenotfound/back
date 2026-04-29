@@ -21,8 +21,9 @@ export class PublicDataService {
 
   // 출처별 API 키 (환경변수에서 로드)
   private readonly publicDataKey: string; // CCTV (공공데이터포털)
-  private readonly safemapKey: string; // 생활안전정보 (생활안전지도)
-  private readonly dspfKey: string; // 경찰/가로등 (재난안전공유플랫폼)
+  private readonly safemapKey: string; // 범죄주의구간 (생활안전지도)
+  private readonly policeKey: string; // 경찰시설 (재난안전공유플랫폼)
+  private readonly streetlightKey: string; // 가로등 (재난안전공유플랫폼)
 
   // 검색 반경 (단위: m)
   private readonly RADIUS_METERS = 500;
@@ -31,7 +32,9 @@ export class PublicDataService {
     this.publicDataKey =
       this.configService.get<string>('PUBLIC_DATA_KEY') ?? '';
     this.safemapKey = this.configService.get<string>('SAFEMAP_API_KEY') ?? '';
-    this.dspfKey = this.configService.get<string>('DSPF_API_KEY') ?? '';
+    this.policeKey = this.configService.get<string>('POLICE_API_KEY') ?? '';
+    this.streetlightKey =
+      this.configService.get<string>('STREETLIGHT_API_KEY') ?? '';
   }
 
   // ==========================================================
@@ -75,7 +78,17 @@ export class PublicDataService {
     return result;
   }
 
-  // fetch 호출 + 에러는 빈 배열로 감싸기
+  // items 안에 있는 첫 번째 객체에서 후보 필드 중 존재하는 키를 골라줌
+  private pickField(items: any[], candidates: string[]): string | null {
+    if (!items || items.length === 0) return null;
+    const sample = items[0];
+    for (const key of candidates) {
+      if (sample?.[key] !== undefined) return key;
+    }
+    return null;
+  }
+
+  // fetch 호출 + 에러는 null 반환 (호출 측에서 더미로 폴백)
   private async safeFetchJson(url: string): Promise<any | null> {
     try {
       const res = await fetch(url);
@@ -92,23 +105,13 @@ export class PublicDataService {
 
   // ==========================================================
   // 1) CCTV - 공공데이터포털 (전국CCTV표준데이터)
-  //    - 키: PUBLIC_DATA_KEY
-  //    - 데이터셋이 표준데이터셋(JSON+CSV)으로 제공되는 경우 odcloud API 사용 가능
-  //    - 마이페이지 > 신청한 API 상세 화면에서 정확한 URL 확인 필요
-  //
-  //    예) https://api.odcloud.kr/api/15013094/v1/uddi:xxxxxxxx?
-  //         page=1&perPage=1000&serviceKey=...
-  //
-  //    응답 구조 예: { data: [ { 위도, 경도, ... } ], currentCount, ... }
-  //    좌표 필드명은 데이터셋마다 다름 (위도/경도, lat/lon, WGS84위도/WGS84경도)
   // ==========================================================
-  // CCTV 좌표 목록 (반경 내). 실제 API + 폴백.
   async listCctvPoints(center: GeoPoint): Promise<GeoPoint[]> {
     if (!this.publicDataKey) {
       return this.generateDummyPoints(center, 12);
     }
 
-    // TODO: 마이페이지에서 발급받은 정확한 URL로 교체!
+    // TODO: 실제 신청한 API 상세 페이지의 정확한 URL로 교체!
     const url =
       `https://api.odcloud.kr/api/15013094/v1/uddi:35e1bbcf-91fd-43e2-9059-657a76f48b3b` +
       `?page=1&perPage=1000` +
@@ -118,75 +121,68 @@ export class PublicDataService {
     if (!data) return this.generateDummyPoints(center, 12);
 
     const items: any[] = data?.data || data?.response?.body?.items || [];
-    const latField = items[0]?.['위도'] !== undefined ? '위도' : 'WGS84위도';
-    const lngField = items[0]?.['경도'] !== undefined ? '경도' : 'WGS84경도';
+    const latField =
+      this.pickField(items, ['위도', 'WGS84위도', 'lat', 'LAT']) ?? '위도';
+    const lngField =
+      this.pickField(items, ['경도', 'WGS84경도', 'lon', 'LON', 'lng']) ??
+      '경도';
 
     const points = this.filterWithinRadius(items, center, latField, lngField);
     return points.length > 0 ? points : this.generateDummyPoints(center, 12);
   }
 
   private async countCctv(center: GeoPoint): Promise<number> {
-    const points = await this.listCctvPoints(center);
-    return points.length;
-  }
-
-  // 좌표 주변에 더미 포인트 N개 생성 (반경 안에서 균등하게)
-  private generateDummyPoints(center: GeoPoint, count: number): GeoPoint[] {
-    const points: GeoPoint[] = [];
-    // 1m 당 위도 변화량 (대략): 1 / 111000
-    // 경도는 위도에 따라 다름: 1 / (111000 * cos(lat))
-    const latPerMeter = 1 / 111000;
-    const lngPerMeter = 1 / (111000 * Math.cos((center.latitude * Math.PI) / 180));
-
-    for (let i = 0; i < count; i++) {
-      const angle = (i * 137) % 360; // 황금각으로 펼침
-      const distance = 100 + ((i * 43) % (this.RADIUS_METERS - 50));
-      const dx = Math.cos((angle * Math.PI) / 180) * distance;
-      const dy = Math.sin((angle * Math.PI) / 180) * distance;
-      points.push({
-        latitude: center.latitude + dy * latPerMeter,
-        longitude: center.longitude + dx * lngPerMeter,
-      });
-    }
-    return points;
+    return (await this.listCctvPoints(center)).length;
   }
 
   // ==========================================================
   // 2) 경찰시설 - 재난안전공유플랫폼 (행정안전부_공통POI_경찰)
-  //    - 키: DSPF_API_KEY (발급 대기 중이면 0 반환)
-  //    - URL 형식 예: https://www.safetydata.go.kr/openapi/[서비스명]
-  //                    ?serviceKey=...&dataType=JSON&...
+  //    키: POLICE_API_KEY
   // ==========================================================
-  private async countPolice(center: GeoPoint): Promise<number> {
-    if (!this.dspfKey) return 0;
+  async listPolicePoints(center: GeoPoint): Promise<GeoPoint[]> {
+    if (!this.policeKey) {
+      return this.generateDummyPoints(center, 3);
+    }
 
-    // TODO: 발급 후 실제 service URL로 교체!
+    // TODO: 발급받은 활용가이드의 실제 service URL로 교체!
+    // 재난안전공유플랫폼은 보통 service ID(DSSP-IF-XXXX) 형태
     const url =
-      `https://www.safetydata.go.kr/V2/api/DSSP-IF-XXXX` +
-      `?serviceKey=${encodeURIComponent(this.dspfKey)}` +
+      `https://www.safetydata.go.kr/V2/api/DSSP-IF-10942` +
+      `?serviceKey=${encodeURIComponent(this.policeKey)}` +
       `&numOfRows=1000&pageNo=1&returnType=json`;
 
     const data = await this.safeFetchJson(url);
-    if (!data) return 0;
+    if (!data) return this.generateDummyPoints(center, 3);
 
     const items: any[] =
       data?.body || data?.response?.body?.items?.item || data?.items || [];
 
-    return this.filterWithinRadius(items, center, 'lat', 'lon').length;
+    const latField =
+      this.pickField(items, ['lat', 'LAT', 'wgsLat', 'Y']) ?? 'lat';
+    const lngField =
+      this.pickField(items, ['lon', 'LON', 'lng', 'wgsLon', 'X']) ?? 'lon';
+
+    const points = this.filterWithinRadius(items, center, latField, lngField);
+    return points.length > 0 ? points : this.generateDummyPoints(center, 3);
+  }
+
+  private async countPolice(center: GeoPoint): Promise<number> {
+    return (await this.listPolicePoints(center)).length;
   }
 
   // ==========================================================
   // 3) 가로등 - 재난안전공유플랫폼 (행정안전부_공통POI_가로등)
+  //    키: STREETLIGHT_API_KEY
   // ==========================================================
   async listStreetlightPoints(center: GeoPoint): Promise<GeoPoint[]> {
-    if (!this.dspfKey) {
+    if (!this.streetlightKey) {
       return this.generateDummyPoints(center, 30);
     }
 
-    // TODO: 발급 후 실제 service URL로 교체!
+    // TODO: 발급받은 활용가이드의 실제 service URL로 교체!
     const url =
-      `https://www.safetydata.go.kr/V2/api/DSSP-IF-YYYY` +
-      `?serviceKey=${encodeURIComponent(this.dspfKey)}` +
+      `https://www.safetydata.go.kr/V2/api/DSSP-IF-10941` +
+      `?serviceKey=${encodeURIComponent(this.streetlightKey)}` +
       `&numOfRows=1000&pageNo=1&returnType=json`;
 
     const data = await this.safeFetchJson(url);
@@ -195,26 +191,27 @@ export class PublicDataService {
     const items: any[] =
       data?.body || data?.response?.body?.items?.item || data?.items || [];
 
-    const points = this.filterWithinRadius(items, center, 'lat', 'lon');
+    const latField =
+      this.pickField(items, ['lat', 'LAT', 'wgsLat', 'Y']) ?? 'lat';
+    const lngField =
+      this.pickField(items, ['lon', 'LON', 'lng', 'wgsLon', 'X']) ?? 'lon';
+
+    const points = this.filterWithinRadius(items, center, latField, lngField);
     return points.length > 0 ? points : this.generateDummyPoints(center, 30);
   }
 
   private async countStreetlight(center: GeoPoint): Promise<number> {
-    const points = await this.listStreetlightPoints(center);
-    return points.length;
+    return (await this.listStreetlightPoints(center)).length;
   }
 
   // ==========================================================
   // 4) 범죄주의구간 - 생활안전지도 (safemap.go.kr) 오픈API
-  //    - 키: SAFEMAP_API_KEY
-  //    - URL 형식 예: https://www.safemap.go.kr/openApi/api/[서비스명]
-  //                    ?authKey=...&dataType=json
-  //
-  //    이 영역은 데이터셋 종류가 많아서(범죄주의구간/안전구역/여성안심구역 등)
-  //    신청한 데이터셋의 endpoint 그대로 넣으면 됩니다.
+  //    키: SAFEMAP_API_KEY
   // ==========================================================
-  private async countCrimeProne(center: GeoPoint): Promise<number> {
-    if (!this.safemapKey) return 0;
+  async listCrimeProneAreas(center: GeoPoint): Promise<GeoPoint[]> {
+    if (!this.safemapKey) {
+      return this.generateDummyPoints(center, 4);
+    }
 
     // TODO: 신청한 생활안전지도 OpenAPI URL로 교체!
     const url =
@@ -223,23 +220,34 @@ export class PublicDataService {
       `&dataType=json&numOfRows=1000&pageNo=1`;
 
     const data = await this.safeFetchJson(url);
-    if (!data) return 0;
+    if (!data) return this.generateDummyPoints(center, 4);
 
     const items: any[] =
       data?.response?.body?.items?.item || data?.body || data?.items || [];
 
-    // 생활안전지도는 보통 컬럼명이 'lat', 'lon' 또는 'WGS84_LAT', 'WGS84_LON'
     const latField =
-      items[0]?.['lat'] !== undefined ? 'lat' : 'WGS84_LAT';
+      this.pickField(items, ['lat', 'LAT', 'WGS84_LAT', 'wgsLat', 'Y']) ??
+      'lat';
     const lngField =
-      items[0]?.['lon'] !== undefined ? 'lon' : 'WGS84_LON';
+      this.pickField(items, [
+        'lon',
+        'LON',
+        'WGS84_LON',
+        'wgsLon',
+        'lng',
+        'X',
+      ]) ?? 'lon';
 
-    return this.filterWithinRadius(items, center, latField, lngField).length;
+    const points = this.filterWithinRadius(items, center, latField, lngField);
+    return points.length > 0 ? points : this.generateDummyPoints(center, 4);
+  }
+
+  private async countCrimeProne(center: GeoPoint): Promise<number> {
+    return (await this.listCrimeProneAreas(center)).length;
   }
 
   // ==========================================================
-  // 한 좌표에 대해 4개 항목을 동시에 조회
-  // 각 호출이 0을 반환하면(키 없음/실패) SafeScoreService에서 더미로 폴백.
+  // 한 좌표에 대해 4개 항목 동시 조회 (안전점수 계산용)
   // ==========================================================
   async countNearbyFacilities(center: GeoPoint): Promise<FacilityCounts> {
     const [cctvCount, policeCount, streetlightCount, crimeProneCount] =
@@ -256,5 +264,27 @@ export class PublicDataService {
     );
 
     return { cctvCount, policeCount, streetlightCount, crimeProneCount };
+  }
+
+  // ==========================================================
+  // 더미 포인트: 반경 안에서 균등하게 N개 흩뿌리기 (API 키 없을 때 폴백)
+  // ==========================================================
+  private generateDummyPoints(center: GeoPoint, count: number): GeoPoint[] {
+    const points: GeoPoint[] = [];
+    const latPerMeter = 1 / 111000;
+    const lngPerMeter =
+      1 / (111000 * Math.cos((center.latitude * Math.PI) / 180));
+
+    for (let i = 0; i < count; i++) {
+      const angle = (i * 137) % 360;
+      const distance = 100 + ((i * 43) % (this.RADIUS_METERS - 50));
+      const dx = Math.cos((angle * Math.PI) / 180) * distance;
+      const dy = Math.sin((angle * Math.PI) / 180) * distance;
+      points.push({
+        latitude: center.latitude + dy * latPerMeter,
+        longitude: center.longitude + dx * lngPerMeter,
+      });
+    }
+    return points;
   }
 }

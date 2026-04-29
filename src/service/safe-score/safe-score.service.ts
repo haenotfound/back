@@ -98,7 +98,10 @@ export class SafeScoreService {
         return this.publicDataService.listCctvPoints(center);
       case 'streetlight':
         return this.publicDataService.listStreetlightPoints(center);
-      // TODO: police 등 추가 가능
+      case 'police':
+        return this.publicDataService.listPolicePoints(center);
+      case 'crime':
+        return this.publicDataService.listCrimeProneAreas(center);
       default:
         throw new BadRequestException(`지원하지 않는 시설 종류입니다: ${type}`);
     }

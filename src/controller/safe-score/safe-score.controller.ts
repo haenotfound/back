@@ -45,7 +45,11 @@ export class SafeScoreController {
 
   // 항목별 시설 좌표 조회 (지도 마커 표시용)
   @ApiOperation({ summary: '반경 내 시설 좌표 목록 (CCTV 등)' })
-  @ApiQuery({ name: 'type', enum: ['cctv', 'streetlight'], example: 'cctv' })
+  @ApiQuery({
+    name: 'type',
+    enum: ['cctv', 'streetlight', 'police', 'crime'],
+    example: 'cctv',
+  })
   @ApiQuery({ name: 'lat', type: Number, example: 37.4979 })
   @ApiQuery({ name: 'lng', type: Number, example: 127.0276 })
   @Get('facilities')
